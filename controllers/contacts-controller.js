@@ -36,8 +36,22 @@ const contactUpdateFavoriteScheme = Joi.object({
 
 const getAllContacts = async (req, res, next) => {
   try {
-    const result = await Contact.find();
-    res.status(200).json(result);
+    const { _id: owner } = req.user;
+    const { page = 1, limit = 10, favorite } = req.query;
+    const skip = (page - 1) * limit;
+    if (favorite === undefined) {
+      const result = await Contact.find({ owner }, "", {
+        skip,
+        limit,
+      }).populate("owner", "email subscription");
+      res.status(200).json(result);
+    } else {
+      const result = await Contact.find({ owner, favorite }, "", {
+        skip,
+        limit,
+      }).populate("owner", "email subscription");
+      res.status(200).json(result);
+    }
   } catch (error) {
     next(error);
   }
@@ -45,7 +59,11 @@ const getAllContacts = async (req, res, next) => {
 
 const getContactById = async (req, res, next) => {
   try {
-    const result = await Contact.findById(req.params.contactId);
+    const { _id: owner } = req.user;
+    const result = await Contact.findOne({
+      _id: req.params.contactId,
+      owner,
+    }).populate("owner", "email subscription");
     if (!result) {
       const error = new Error(
         `Contact with id=${req.params.contactId} not found!`
@@ -67,7 +85,8 @@ const addContact = async (req, res, next) => {
       error.status = 400;
       throw error;
     }
-    const result = await Contact.create(req.body);
+    const { _id: owner } = req.user;
+    const result = await Contact.create({ ...req.body, owner });
     res.status(201).json(result);
   } catch (error) {
     next(error);
@@ -76,7 +95,11 @@ const addContact = async (req, res, next) => {
 
 const deleteContact = async (req, res, next) => {
   try {
-    const result = await Contact.findByIdAndDelete(req.params.contactId);
+    const { _id: owner } = req.user;
+    const result = await Contact.findOneAndDelete({
+      _id: req.params.contactId,
+      owner,
+    });
     if (!result) {
       const error = new Error(`Not found!`);
       error.status = 404;
@@ -96,14 +119,15 @@ const updateStatusContact = async (req, res, next) => {
       error.status = 400;
       throw error;
     }
-    const result = await Contact.findByIdAndUpdate(
-      req.params.contactId,
+    const { _id: owner } = req.user;
+    const result = await Contact.findOneAndUpdate(
+      { _id: req.params.contactId, owner },
       req.body,
       {
         new: true,
         runValidators: true,
       }
-    );
+    ).populate("owner", "email subscription");
     if (!result) {
       const error = new Error(
         `Contact with id=${req.params.contactId} not found!`
@@ -125,14 +149,15 @@ const updateContact = async (req, res, next) => {
       error.status = 400;
       throw error;
     }
-    const result = await Contact.findByIdAndUpdate(
-      req.params.contactId,
+    const { _id: owner } = req.user;
+    const result = await Contact.findOneAndUpdate(
+      { _id: req.params.contactId, owner },
       req.body,
       {
         new: true,
         runValidators: true,
       }
-    );
+    ).populate("owner", "email subscription");
     if (!result) {
       const error = new Error(
         `Contact with id=${req.params.contactId} not found!`
