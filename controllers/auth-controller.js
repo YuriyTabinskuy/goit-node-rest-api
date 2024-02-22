@@ -6,9 +6,12 @@ import fs from "fs/promises";
 import path from "path";
 import gravatar from "gravatar";
 import Jimp from "jimp";
+import { nanoid } from "nanoid";
+import sendEmail from "../helpers/sendEmail.js";
 import "dotenv/config";
 
 const avatarPath = path.resolve("public", "avatars");
+const verificationToken = nanoid();
 
 const userSchema = Joi.object({
   email: Joi.string().required(),
@@ -21,7 +24,62 @@ const updateSubscriptionSchema = Joi.object({
     .required(),
 });
 
+const resendVerifySchema = Joi.object({
+  email: Joi.string().required(),
+});
+
 const { JWT_SECRET } = process.env;
+
+const verifyUser = async (req, res, next) => {
+  try {
+    const { verificationToken } = req.params;
+    const user = await User.findOne({ verificationToken });
+    if (!user) {
+      const error = new Error("User not found");
+      error.status = 404;
+      throw error;
+    }
+    await User.findByIdAndUpdate(user._id, {
+      verificationToken: null,
+      verify: true,
+    });
+    res.json({ message: "Verification successful" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resendVerify = async (req, res, next) => {
+  try {
+    const resendVerifyValidate = resendVerifySchema.validate(req.body);
+    if (resendVerifyValidate.error) {
+      const error = new Error(resendVerifyValidate.error.message);
+      error.status = 400;
+      throw error;
+    }
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) {
+      const error = new Error("User not found");
+      error.status = 404;
+      throw error;
+    }
+    if (user.verify) {
+      const error = new Error("Verification has already been passed");
+      error.status = 400;
+      throw error;
+    }
+    const verifyEmail = {
+      to: "vomoh87045@gyxmz.com",
+      subject: "Verify email",
+      html: `<a target="_blank" href="http://localhost:3000/users/verify/${verificationToken}">Click to verify your email</a>`,
+    };
+    await sendEmail(verifyEmail);
+    res.json({ message: "Verification email sent" });
+  } catch (error) {
+    next(error);
+  }
+};
 
 const signup = async (req, res, next) => {
   try {
@@ -46,7 +104,14 @@ const signup = async (req, res, next) => {
       ...req.body,
       avatarURL: httpUrl,
       password: hashPassword,
+      verificationToken,
     });
+    const verifyEmail = {
+      to: "vomoh87045@gyxmz.com",
+      subject: "Verify email",
+      html: `<a target="_blank" href="http://localhost:3000/users/verify/${verificationToken}">Click to verify your email</a>`,
+    };
+    await sendEmail(verifyEmail);
     res.status(201).json({
       user: {
         email: newUser.email,
@@ -70,6 +135,12 @@ const login = async (req, res, next) => {
     if (!user) {
       const error = new Error("Email or password is wrong");
       error.status = 401;
+      throw error;
+    }
+
+    if (!user.verify) {
+      const error = new Error("User not found");
+      error.status = 404;
       throw error;
     }
     const comparePassword = await bcrypt.compare(
@@ -194,6 +265,8 @@ const updateAvatar = async (req, res, next) => {
 
 export default {
   signup,
+  verifyUser,
+  resendVerify,
   login,
   getCurrent,
   logout,
